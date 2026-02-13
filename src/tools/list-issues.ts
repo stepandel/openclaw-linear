@@ -54,7 +54,7 @@ export function registerListIssuesTool(
       if (params.team) {
         filter.team = { key: { eq: params.team } };
       }
-      if (params.labels) {
+      if (params.labels && params.labels.length > 0) {
         filter.labels = {
           some: { name: { in: params.labels } },
         };

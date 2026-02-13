@@ -61,7 +61,7 @@ plugins:
 
 ## End-to-End Flow
 
-```
+```text
 Linear ticket assigned → Linear sends webhook POST
   → Plugin verifies HMAC signature
   → Event router matches assignee to agent via agentMapping

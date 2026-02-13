@@ -18,7 +18,7 @@ List issues from Linear with optional filters.
 | `labels` | string[] | No | Filter by label names |
 
 **Example:**
-```
+```text
 List my assigned in-progress issues:
 linear_list_issues { "state": "In Progress", "assignee": "Titus" }
 ```
@@ -41,7 +41,7 @@ Create a new issue in Linear.
 | `assignee` | string | No | Assignee email address |
 
 **Example:**
-```
+```text
 linear_create_issue { "title": "Fix auth bug", "teamId": "ENG", "priority": 2, "description": "Users can't log in after password reset" }
 ```
 
@@ -62,7 +62,7 @@ Update an existing Linear issue (state, assignee, priority, or description).
 | `description` | string | No | New description (markdown) |
 
 **Example:**
-```
+```text
 linear_update_issue { "issueId": "ENG-123", "state": "In Progress" }
 ```
 
@@ -80,6 +80,6 @@ Add a comment to an existing Linear issue.
 | `body` | string | **Yes** | Comment body (markdown) |
 
 **Example:**
-```
+```text
 linear_add_comment { "issueId": "ENG-123", "body": "PR submitted: https://github.com/org/repo/pull/42" }
 ```

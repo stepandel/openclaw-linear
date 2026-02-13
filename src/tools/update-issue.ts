@@ -92,6 +92,9 @@ export function registerUpdateIssueTool(
       }
 
       if (params.priority !== undefined) {
+        if (!Number.isInteger(params.priority) || params.priority < 0 || params.priority > 4) {
+          return jsonResult({ error: 'priority must be an integer between 0 and 4 (0=None, 1=Urgent, 2=High, 3=Normal, 4=Low)' });
+        }
         input.priority = params.priority;
         updatedFields.push(`priority → ${params.priority}`);
       }
