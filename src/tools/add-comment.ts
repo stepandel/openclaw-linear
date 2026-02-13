@@ -25,6 +25,7 @@ export function registerAddCommentTool(
       required: ["issueId", "body"],
     },
     async execute(_id, params) {
+     try {
       const issues = await client.issues({
         filter: { id: { eq: params.issueId } },
       });
@@ -51,6 +52,16 @@ export function registerAddCommentTool(
         commentId: comment?.id,
         url: comment?.url,
       });
+     } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("authentication") || message.includes("401")) {
+        return jsonResult({ error: "Linear authentication failed. Check your API key." });
+      }
+      if (message.includes("rate") || message.includes("429")) {
+        return jsonResult({ error: "Linear rate limit hit. Please try again shortly." });
+      }
+      return jsonResult({ error: `Linear API error: ${message}` });
+     }
     },
   });
 }

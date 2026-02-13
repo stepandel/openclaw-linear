@@ -38,6 +38,7 @@ export function registerUpdateIssueTool(
       required: ["issueId"],
     },
     async execute(_id, params) {
+     try {
       const issues = await client.issues({
         filter: { id: { eq: params.issueId } },
       });
@@ -96,8 +97,12 @@ export function registerUpdateIssueTool(
       }
 
       if (params.description) {
-        input.description = params.description;
-        updatedFields.push("description");
+        // Append to existing description rather than overwriting
+        const existing = issue.description ?? "";
+        input.description = existing
+          ? `${existing}\n\n${params.description}`
+          : params.description;
+        updatedFields.push("description (appended)");
       }
 
       if (updatedFields.length === 0) {
@@ -111,6 +116,16 @@ export function registerUpdateIssueTool(
         issueId: issue.identifier,
         updated: updatedFields,
       });
+     } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("authentication") || message.includes("401")) {
+        return jsonResult({ error: "Linear authentication failed. Check your API key." });
+      }
+      if (message.includes("rate") || message.includes("429")) {
+        return jsonResult({ error: "Linear rate limit hit. Please try again shortly." });
+      }
+      return jsonResult({ error: `Linear API error: ${message}` });
+     }
     },
   });
 }

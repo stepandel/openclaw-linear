@@ -42,6 +42,7 @@ export function registerCreateIssueTool(
       required: ["title", "teamId"],
     },
     async execute(_id, params) {
+     try {
       // Resolve team by key or ID
       const teams = await client.teams({
         filter: {
@@ -113,6 +114,16 @@ export function registerCreateIssueTool(
         url: issue?.url,
         title: issue?.title,
       });
+     } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("authentication") || message.includes("401")) {
+        return jsonResult({ error: "Linear authentication failed. Check your API key." });
+      }
+      if (message.includes("rate") || message.includes("429")) {
+        return jsonResult({ error: "Linear rate limit hit. Please try again shortly." });
+      }
+      return jsonResult({ error: `Linear API error: ${message}` });
+     }
     },
   });
 }
