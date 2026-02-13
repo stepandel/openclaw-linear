@@ -8,14 +8,16 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@linear/sdk": "^29.0.0"
   },
   "devDependencies": {
     "openclaw": "^2026.2.12",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   },
   "openclaw": {
     "extensions": [

@@ -80,7 +80,7 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
         createdAt: String(payload.createdAt ?? ""),
       };
 
-      deps.logger.info(`Linear webhook: ${event.action} ${event.type}`);
+      deps.logger.info(`Linear webhook: ${event.action} ${event.type} (${String(event.data.id ?? "unknown")})`);
 
       res.writeHead(200);
       res.end("OK");
