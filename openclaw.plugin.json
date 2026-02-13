@@ -8,12 +8,30 @@
     "properties": {
       "apiKey": {
         "type": "string",
-        "sensitive": true
+        "sensitive": true,
+        "description": "Linear API key (Settings > API > Personal API keys)"
       },
       "webhookSecret": {
         "type": "string",
-        "sensitive": true
+        "sensitive": true,
+        "description": "Webhook signing secret for HMAC verification"
+      },
+      "teamIds": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Linear team keys to listen for (e.g. [\"ENG\", \"OPS\"]). Empty = all teams."
+      },
+      "eventFilter": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Event types to handle (e.g. [\"Issue\", \"Comment\"]). Empty = all types."
+      },
+      "agentMapping": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Map Linear user IDs to OpenClaw agent IDs for routing (e.g. {\"linear-user-uuid\": \"agent-name\"})"
       }
-    }
+    },
+    "required": ["apiKey", "webhookSecret"]
   }
 }
