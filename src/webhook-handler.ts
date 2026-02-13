@@ -14,6 +14,7 @@ type WebhookHandlerDeps = {
     info: (message: string) => void;
     error: (message: string) => void;
   };
+  onEvent?: (event: LinearWebhookPayload) => void;
 };
 
 const processedDeliveryIds = new Set<string>();
@@ -81,6 +82,8 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
       };
 
       deps.logger.info(`Linear webhook: ${event.action} ${event.type} (${String(event.data.id ?? "unknown")})`);
+
+      deps.onEvent?.(event);
 
       res.writeHead(200);
       res.end("OK");

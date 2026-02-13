@@ -1,14 +1,26 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { createWebhookHandler } from "./webhook-handler.js";
+import { createEventRouter } from "./event-router.js";
 
 export function activate(api: OpenClawPluginApi): void {
   api.logger.info("Linear plugin activated");
 
   const webhookSecret = api.pluginConfig?.["webhookSecret"];
   if (typeof webhookSecret === "string" && webhookSecret) {
+    const userMap = (api.pluginConfig?.["userMap"] as Record<string, string>) ?? {};
+    const route = createEventRouter({ userMap, logger: api.logger });
+
     const handler = createWebhookHandler({
       webhookSecret,
       logger: api.logger,
+      onEvent: (event) => {
+        const actions = route(event);
+        for (const action of actions) {
+          api.logger.info(
+            `[event-router] ${action.type} agent=${action.agentId} event=${action.event}: ${action.detail}`,
+          );
+        }
+      },
     });
 
     api.registerHttpRoute({
