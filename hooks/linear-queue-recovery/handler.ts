@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, existsSync, renameSync, openSync, writeSync, fsyncSync, closeSync, unlinkSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 export interface QueueItem {
   id: string;
@@ -36,7 +36,7 @@ export default function handleRecovery(workspaceDir: string): number {
     return 0;
   }
 
-  if (!queue.items || queue.items.length === 0) {
+  if (!Array.isArray(queue.items) || queue.items.length === 0) {
     return 0;
   }
 
@@ -52,7 +52,21 @@ export default function handleRecovery(workspaceDir: string): number {
   }
 
   if (recovered > 0) {
-    writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\n", "utf-8");
+    const content = JSON.stringify(queue, null, 2) + "\n";
+    const tmpPath = `${queuePath}.tmp.${process.pid}.${Date.now()}`;
+    try {
+      const fd = openSync(tmpPath, "w");
+      try {
+        writeSync(fd, content, 0, "utf-8");
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+      renameSync(tmpPath, queuePath);
+    } catch (err) {
+      try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
+      throw err;
+    }
     console.log(`[linear-queue-recovery] Recovered ${recovered} stale item(s)`);
   }
 
