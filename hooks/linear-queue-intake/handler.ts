@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, openSync, writeSync, fsyncSync, closeSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 export interface QueueItem {
@@ -31,6 +31,16 @@ const EVENT_PRIORITY: Record<string, number> = {
  *   - Multi:  "1. [Assigned] ENG-42: Fix login bug"
  */
 function parseNotificationLine(line: string): { id: string; event: string; summary: string } | null {
+  // Multi-notification with quoted comment: "N. [Mentioned] TEAM-123: "comment text""
+  // Must be checked before multiMatch since multiMatch would also match Mentioned lines
+  const mentionMatch = line.match(
+    /^\d+\.\s+\[Mentioned\]\s+([A-Z]+-\d+):\s*"(.+)"$/,
+  );
+  if (mentionMatch) {
+    const [, id, summary] = mentionMatch;
+    return { id, event: "comment.mention", summary: summary.trim() };
+  }
+
   // Multi-notification format: "N. [Label] TEAM-123: summary"
   const multiMatch = line.match(
     /^\d+\.\s+\[(\w+(?:\s+\w+)?)\]\s+([A-Z]+-\d+):\s*(.+)$/,
@@ -39,15 +49,6 @@ function parseNotificationLine(line: string): { id: string; event: string; summa
     const [, label, id, summary] = multiMatch;
     const event = labelToEvent(label);
     return { id, event, summary: summary.trim() };
-  }
-
-  // Multi-notification with quoted comment: "N. [Mentioned] TEAM-123: "comment text""
-  const mentionMatch = line.match(
-    /^\d+\.\s+\[Mentioned\]\s+([A-Z]+-\d+):\s*"(.+)"$/,
-  );
-  if (mentionMatch) {
-    const [, id, summary] = mentionMatch;
-    return { id, event: "comment.mention", summary: summary.trim() };
   }
 
   // Single notification: "Assigned to issue TEAM-123: summary"
@@ -128,7 +129,21 @@ function writeQueue(queuePath: string, queue: WorkQueue): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\n", "utf-8");
+  const tmpPath = `${queuePath}.tmp.${process.pid}.${Date.now()}`;
+  const content = JSON.stringify(queue, null, 2) + "\n";
+  try {
+    const fd = openSync(tmpPath, "w");
+    try {
+      writeSync(fd, content, 0, "utf-8");
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmpPath, queuePath);
+  } catch (err) {
+    try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
+    throw err;
+  }
 }
 
 /**
