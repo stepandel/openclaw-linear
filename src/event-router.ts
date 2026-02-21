@@ -104,10 +104,17 @@ function extractMentionsFromProseMirror(node: unknown): string[] {
  * Extract mentioned user identifiers from a comment.
  * Tries structured ProseMirror bodyData first (yields UUIDs), then
  * falls back to regex on the markdown body (yields usernames/handles).
+ *
+ * When using the regex fallback, extracted tokens may be display names
+ * rather than UUIDs. The agentMapping is consulted to resolve them:
+ * first as direct keys (UUID match), then by scanning agentMapping
+ * for values or performing a case-insensitive match against known names
+ * provided via the optional nameMapping parameter.
  */
 function extractMentionedUserIds(
   body: string,
-  bodyData?: unknown,
+  bodyData: unknown | undefined,
+  agentMapping: Record<string, string>,
 ): string[] {
   if (bodyData) {
     const ids = extractMentionsFromProseMirror(bodyData);
@@ -115,7 +122,33 @@ function extractMentionedUserIds(
   }
 
   const matches = body.matchAll(/@([a-zA-Z0-9_.-]+)/g);
-  return [...new Set([...matches].map((m) => m[1]))];
+  const rawTokens = [...new Set([...matches].map((m) => m[1]))];
+
+  // Resolve each token: if it's a UUID key in agentMapping, use it directly.
+  // Otherwise, search agentMapping for a key whose associated agentId matches
+  // the token (case-insensitive), which handles the common case where the
+  // regex extracts a display name that matches the agentId value.
+  const resolved: string[] = [];
+  for (const token of rawTokens) {
+    if (agentMapping[token]) {
+      // Direct UUID match
+      resolved.push(token);
+    } else {
+      // Reverse lookup: find a UUID key whose agentId value matches the token
+      const lowerToken = token.toLowerCase();
+      const matchedUuid = Object.entries(agentMapping).find(
+        ([, agentId]) => agentId.toLowerCase() === lowerToken,
+      );
+      if (matchedUuid) {
+        resolved.push(matchedUuid[0]);
+      } else {
+        // Pass through as-is — will be logged as unmapped downstream
+        resolved.push(token);
+      }
+    }
+  }
+
+  return resolved;
 }
 
 function resolveIssueLabel(data: Record<string, unknown>): string {
@@ -349,7 +382,7 @@ function handleComment(
 
   const commentId = String(event.data.id ?? "");
   const bodyData = event.data.bodyData;
-  const mentionedIds = extractMentionedUserIds(body, bodyData);
+  const mentionedIds = extractMentionedUserIds(body, bodyData, config.agentMapping);
 
   if (mentionedIds.length === 0) {
     return [];

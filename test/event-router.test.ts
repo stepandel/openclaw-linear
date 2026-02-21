@@ -703,6 +703,90 @@ describe("event-router", () => {
       expect(actions).toHaveLength(1);
     });
 
+    it("resolves display name to UUID via reverse lookup when bodyData is missing", () => {
+      const config = makeConfig({
+        "uuid-abc-123": "juno",
+        "uuid-def-456": "titus",
+      });
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-reverse",
+          body: "Hey @juno can you look at this?",
+          issue: { id: "issue-600", identifier: "ENG-60", title: "Test" },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).toMatchObject({
+        type: "wake",
+        agentId: "juno",
+        event: "comment.mention",
+        linearUserId: "uuid-abc-123",
+        commentId: "comment-reverse",
+      });
+    });
+
+    it("resolves display name case-insensitively via reverse lookup", () => {
+      const config = makeConfig({
+        "uuid-abc-123": "Juno",
+      });
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-case",
+          body: "Hey @juno check this",
+          issue: { id: "issue-601" },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(1);
+      expect(actions[0].linearUserId).toBe("uuid-abc-123");
+    });
+
+    it("resolves multiple display names via reverse lookup when bodyData is empty", () => {
+      const config = makeConfig({
+        "uuid-abc-123": "juno",
+        "uuid-def-456": "titus",
+      });
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-multi",
+          body: "cc @juno @titus",
+          bodyData: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "cc @juno @titus" }],
+              },
+            ],
+          },
+          issue: { id: "issue-602" },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(2);
+      expect(actions[0].linearUserId).toBe("uuid-abc-123");
+      expect(actions[1].linearUserId).toBe("uuid-def-456");
+    });
+
     it("falls back to regex when bodyData has no mentions", () => {
       const config = makeConfig();
       const route = createEventRouter(config);
