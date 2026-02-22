@@ -4,12 +4,14 @@ import { createWebhookHandler } from "./webhook-handler.js";
 import { createEventRouter, type RouterAction } from "./event-router.js";
 import { InboxQueue, type EnqueueEntry } from "./work-queue.js";
 import { createQueueTool } from "./tools/queue-tool.js";
-import { setApiKey } from "./linear-api.js";
+import { setApiKey, resolveUserId } from "./linear-api.js";
 import { createIssueTool } from "./tools/linear-issue-tool.js";
 import { createCommentTool } from "./tools/linear-comment-tool.js";
 import { createTeamTool } from "./tools/linear-team-tool.js";
 import { createProjectTool } from "./tools/linear-project-tool.js";
 import { createRelationTool } from "./tools/linear-relation-tool.js";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CHANNEL_ID = "linear";
 const DEFAULT_DEBOUNCE_MS = 30_000;
@@ -144,10 +146,47 @@ export function activate(api: OpenClawPluginApi): void {
     return;
   }
 
-  const agentMapping =
+  const rawAgentMapping =
     (api.pluginConfig?.["agentMapping"] as Record<string, string>) ?? {};
-  if (Object.keys(agentMapping).length === 0) {
+  if (Object.keys(rawAgentMapping).length === 0) {
     api.logger.info("[linear] agentMapping is empty — all events will be dropped");
+  }
+
+  // Normalize agentMapping: resolve name/email keys to Linear user UUIDs.
+  // UUID keys are kept as-is; non-UUID keys are resolved via the Linear API.
+  // Both forms end up in the final map so the event router can match by UUID.
+  const agentMapping: Record<string, string> = {};
+  const namesToResolve: Array<{ key: string; agentId: string }> = [];
+
+  for (const [key, agentId] of Object.entries(rawAgentMapping)) {
+    if (UUID_RE.test(key)) {
+      agentMapping[key] = agentId;
+    } else {
+      // Keep the name key as a fallback; also queue for UUID resolution
+      agentMapping[key] = agentId;
+      namesToResolve.push({ key, agentId });
+    }
+  }
+
+  if (namesToResolve.length > 0) {
+    // Resolve in the background so activation isn't blocked
+    Promise.all(
+      namesToResolve.map(async ({ key, agentId }) => {
+        try {
+          const uuid = await resolveUserId(key);
+          agentMapping[uuid] = agentId;
+          api.logger.info(`[linear] Resolved agentMapping key "${key}" → ${uuid}`);
+        } catch (err) {
+          api.logger.error(
+            `[linear] Failed to resolve agentMapping key "${key}": ${formatErrorMessage(err)}`,
+          );
+        }
+      }),
+    ).catch((err) => {
+      api.logger.error(
+        `[linear] agentMapping resolution failed: ${formatErrorMessage(err)}`,
+      );
+    });
   }
 
   const eventFilter =
