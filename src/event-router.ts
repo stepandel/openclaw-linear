@@ -384,10 +384,6 @@ function handleComment(
   const bodyData = event.data.bodyData;
   const mentionedIds = extractMentionedUserIds(body, bodyData, config.agentMapping);
 
-  if (mentionedIds.length === 0) {
-    return [];
-  }
-
   const actions: RouterAction[] = [];
 
   const issueRef = event.data.issue as Record<string, unknown> | undefined;
@@ -398,9 +394,14 @@ function handleComment(
   const identifier = (issueRef?.identifier as string) ?? issueId;
   const issuePriority = (issueRef?.priority as number) ?? 0;
 
+  // Track which agent IDs we've already queued to avoid duplicates
+  const queuedAgentIds = new Set<string>();
+
+  // Queue for @-mentioned users
   for (const userId of mentionedIds) {
     const agentId = config.agentMapping[userId];
     if (agentId) {
+      queuedAgentIds.add(agentId);
       actions.push({
         type: "wake",
         agentId,
@@ -418,6 +419,37 @@ function handleComment(
         `Unmapped Linear user ${userId} mentioned in comment on ${issueId}`,
       );
     }
+  }
+
+  // Also queue for the issue assignee (comment.activity) even without @-mention
+  const assigneeId = (issueRef?.assigneeId as string | undefined)
+    ?? (event.data.issueAssigneeId as string | undefined);
+  if (assigneeId) {
+    const assigneeAgentId = config.agentMapping[assigneeId];
+    if (assigneeAgentId && !queuedAgentIds.has(assigneeAgentId)) {
+      // Check the comment author isn't the assignee themselves
+      const commentUserId = (event.data.userId ?? (event.data.user as Record<string, unknown> | undefined)?.id) as string | undefined;
+      if (commentUserId !== assigneeId) {
+        actions.push({
+          type: "wake",
+          agentId: assigneeAgentId,
+          event: "comment.activity",
+          detail: `New comment on assigned issue ${issueLabel}\n\n> ${body}`,
+          issueId,
+          issueLabel,
+          identifier,
+          issuePriority,
+          linearUserId: assigneeId,
+          commentId,
+        });
+      }
+    }
+  }
+
+  if (actions.length === 0) {
+    config.logger.info(
+      `Comment on ${issueId}: no mentions and no mapped assignee — skipping`,
+    );
   }
 
   return actions;

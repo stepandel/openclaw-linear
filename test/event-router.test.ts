@@ -858,6 +858,151 @@ describe("event-router", () => {
     });
   });
 
+  describe("comment activity (assignee without @-mention)", () => {
+    it("queues comment.activity for assignee without @-mention", () => {
+      const config = makeConfig();
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-no-mention",
+          body: "I fixed this in the latest commit",
+          userId: "some-other-user",
+          issue: { id: "issue-assigned", assigneeId: "user-1" },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).toMatchObject({
+        type: "wake",
+        agentId: "agent-1",
+        event: "comment.activity",
+        issueId: "issue-assigned",
+        linearUserId: "user-1",
+        commentId: "comment-no-mention",
+      });
+      expect(actions[0].detail).toContain("New comment on assigned issue");
+    });
+
+    it("does not duplicate if assignee is also @-mentioned", () => {
+      const config = makeConfig();
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-dup",
+          body: "Hey @user-1 check this out",
+          userId: "some-other-user",
+          issue: { id: "issue-dup", assigneeId: "user-1" },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      // Should only have 1 action (comment.mention), not a duplicate comment.activity
+      expect(actions).toHaveLength(1);
+      expect(actions[0].event).toBe("comment.mention");
+    });
+
+    it("skips comment.activity when assignee is the comment author", () => {
+      const config = makeConfig();
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-self",
+          body: "Added some notes",
+          userId: "user-1",
+          issue: { id: "issue-self", assigneeId: "user-1" },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(0);
+    });
+
+    it("queues comment on completed issue for assignee", () => {
+      const config = makeConfig();
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-done",
+          body: "This needs a follow-up",
+          userId: "some-other-user",
+          issue: {
+            id: "issue-done",
+            assigneeId: "user-1",
+            state: { type: "completed", name: "Done" },
+          },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(1);
+      expect(actions[0].event).toBe("comment.activity");
+    });
+
+    it("queues @-mention comment on canceled issue", () => {
+      const config = makeConfig();
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-canceled",
+          body: "Hey @user-1 this was actually needed",
+          userId: "some-other-user",
+          issue: {
+            id: "issue-canceled",
+            state: { type: "cancelled", name: "Cancelled" },
+          },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(1);
+      expect(actions[0].event).toBe("comment.mention");
+    });
+
+    it("logs when no mentions and no mapped assignee", () => {
+      const config = makeConfig();
+      const route = createEventRouter(config);
+
+      const event: LinearWebhookPayload = {
+        type: "Comment",
+        action: "create",
+        data: {
+          id: "comment-nobody",
+          body: "Just a general note",
+          userId: "some-other-user",
+          issue: { id: "issue-unassigned" },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const actions = route(event);
+      expect(actions).toHaveLength(0);
+      expect(config.logger.info).toHaveBeenCalledWith(
+        expect.stringContaining("no mentions and no mapped assignee"),
+      );
+    });
+  });
+
   describe("unrelated events", () => {
     it("returns empty for non-issue non-comment events", () => {
       const config = makeConfig();
