@@ -23,6 +23,7 @@ const EVENT_LABELS: Record<string, string> = {
   "issue.state_readded": "State Re-added",
   "issue.priority_changed": "Priority Changed",
   "comment.mention": "Mentioned",
+  "comment.reply": "Reply",
 };
 
 export function formatConsolidatedMessage(actions: RouterAction[]): string {
@@ -40,7 +41,7 @@ export function formatConsolidatedMessage(actions: RouterAction[]): string {
 }
 
 function formatActionSummary(action: RouterAction): string {
-  if (action.event === "comment.mention") {
+  if (action.event === "comment.mention" || action.event === "comment.reply") {
     const bodyStart = action.detail.indexOf("\n\n> ");
     if (bodyStart !== -1) {
       const quote = action.detail.slice(bodyStart + 4); // skip "\n\n> "

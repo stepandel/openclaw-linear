@@ -27,6 +27,7 @@ export const QUEUE_EVENT: Record<string, string> = {
   "issue.assigned": "ticket",
   "issue.state_readded": "ticket",
   "comment.mention": "mention",
+  "comment.reply": "mention",
 };
 
 const REMOVAL_EVENTS = new Set([
