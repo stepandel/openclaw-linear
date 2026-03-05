@@ -1,35 +1,41 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { LinearClient } from "../../src/linear-client.js";
+import { createRelationTool } from "../../src/tools/linear-relation-tool.js";
 
-vi.mock("../../src/linear-api.js", () => ({
-  graphql: vi.fn(),
-  resolveIssueId: vi.fn(),
-}));
-
-const { graphql, resolveIssueId } = await import("../../src/linear-api.js");
-const { createRelationTool } = await import("../../src/tools/linear-relation-tool.js");
-
-const mockedGraphql = vi.mocked(graphql);
-const mockedResolveIssueId = vi.mocked(resolveIssueId);
+function mockClient(): LinearClient {
+  return {
+    graphql: vi.fn(),
+    resolveIssueId: vi.fn(),
+    resolveTeamId: vi.fn(),
+    resolveStateId: vi.fn(),
+    resolveUserId: vi.fn(),
+    resolveLabelIds: vi.fn(),
+    resolveProjectId: vi.fn(),
+    _resetIssueIdCache: vi.fn(),
+  } as unknown as LinearClient;
+}
 
 function parse(result: { content: { type: string; text?: string }[] }) {
   const text = result.content.find((c) => c.type === "text")?.text;
   return text ? JSON.parse(text) : undefined;
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 describe("linear_relation tool", () => {
+  let client: ReturnType<typeof mockClient>;
+
+  beforeEach(() => {
+    client = mockClient();
+  });
+
   it("has correct name", () => {
-    const tool = createRelationTool();
+    const tool = createRelationTool(client);
     expect(tool.name).toBe("linear_relation");
   });
 
   describe("list", () => {
     it("returns relations and inverse relations", async () => {
-      mockedResolveIssueId.mockResolvedValue("uuid-1");
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.resolveIssueId).mockResolvedValue("uuid-1");
+      vi.mocked(client.graphql).mockResolvedValue({
         issue: {
           relations: {
             nodes: [
@@ -52,7 +58,7 @@ describe("linear_relation tool", () => {
         },
       });
 
-      const tool = createRelationTool();
+      const tool = createRelationTool(client);
       const result = await tool.execute("call-1", {
         action: "list",
         issueId: "ENG-1",
@@ -64,7 +70,7 @@ describe("linear_relation tool", () => {
     });
 
     it("returns error without issueId", async () => {
-      const tool = createRelationTool();
+      const tool = createRelationTool(client);
       const result = await tool.execute("call-1", { action: "list" });
       const data = parse(result);
       expect(data.error).toContain("issueId is required");
@@ -73,17 +79,17 @@ describe("linear_relation tool", () => {
 
   describe("add", () => {
     it("creates a blocks relation", async () => {
-      mockedResolveIssueId
+      vi.mocked(client.resolveIssueId)
         .mockResolvedValueOnce("uuid-1")
         .mockResolvedValueOnce("uuid-2");
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.graphql).mockResolvedValue({
         issueRelationCreate: {
           success: true,
           issueRelation: { id: "r-new", type: "blocks" },
         },
       });
 
-      const tool = createRelationTool();
+      const tool = createRelationTool(client);
       const result = await tool.execute("call-1", {
         action: "add",
         issueId: "ENG-1",
@@ -95,17 +101,17 @@ describe("linear_relation tool", () => {
     });
 
     it("swaps direction for blocked-by", async () => {
-      mockedResolveIssueId
+      vi.mocked(client.resolveIssueId)
         .mockResolvedValueOnce("uuid-related") // relatedIssueId resolved first for blocked-by
         .mockResolvedValueOnce("uuid-issue");
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.graphql).mockResolvedValue({
         issueRelationCreate: {
           success: true,
           issueRelation: { id: "r-new", type: "blocks" },
         },
       });
 
-      const tool = createRelationTool();
+      const tool = createRelationTool(client);
       await tool.execute("call-1", {
         action: "add",
         issueId: "ENG-1",
@@ -114,7 +120,7 @@ describe("linear_relation tool", () => {
       });
 
       // For blocked-by, issueId and relatedIssueId are swapped
-      const call = mockedGraphql.mock.calls[0];
+      const call = vi.mocked(client.graphql).mock.calls[0];
       const vars = call[1] as {
         input: { issueId: string; relatedIssueId: string; type: string };
       };
@@ -124,7 +130,7 @@ describe("linear_relation tool", () => {
     });
 
     it("returns error without required fields", async () => {
-      const tool = createRelationTool();
+      const tool = createRelationTool(client);
 
       let result = await tool.execute("call-1", { action: "add" });
       expect(parse(result).error).toContain("issueId is required");
@@ -146,11 +152,11 @@ describe("linear_relation tool", () => {
 
   describe("delete", () => {
     it("deletes a relation", async () => {
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.graphql).mockResolvedValue({
         issueRelationDelete: { success: true },
       });
 
-      const tool = createRelationTool();
+      const tool = createRelationTool(client);
       const result = await tool.execute("call-1", {
         action: "delete",
         relationId: "r1",
@@ -160,7 +166,7 @@ describe("linear_relation tool", () => {
     });
 
     it("returns error without relationId", async () => {
-      const tool = createRelationTool();
+      const tool = createRelationTool(client);
       const result = await tool.execute("call-1", { action: "delete" });
       const data = parse(result);
       expect(data.error).toContain("relationId is required");
@@ -168,9 +174,9 @@ describe("linear_relation tool", () => {
   });
 
   it("catches and returns API errors", async () => {
-    mockedResolveIssueId.mockRejectedValue(new Error("Connection refused"));
+    vi.mocked(client.resolveIssueId).mockRejectedValue(new Error("Connection refused"));
 
-    const tool = createRelationTool();
+    const tool = createRelationTool(client);
     const result = await tool.execute("call-1", {
       action: "list",
       issueId: "ENG-1",

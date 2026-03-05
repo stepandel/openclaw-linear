@@ -12,6 +12,8 @@ export type RouterAction = {
   linearUserId: string;
   /** Comment ID for mention events — used as dedup key in the queue. */
   commentId?: string;
+  /** Workspace ID for multi-workspace support. */
+  workspaceId?: string;
 };
 
 export type StateAction = "add" | "remove" | "ignore";

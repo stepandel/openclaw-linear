@@ -1,32 +1,40 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { LinearClient } from "../../src/linear-client.js";
+import { createTeamTool } from "../../src/tools/linear-team-tool.js";
 
-vi.mock("../../src/linear-api.js", () => ({
-  graphql: vi.fn(),
-}));
-
-const { graphql } = await import("../../src/linear-api.js");
-const { createTeamTool } = await import("../../src/tools/linear-team-tool.js");
-
-const mockedGraphql = vi.mocked(graphql);
+function mockClient(): LinearClient {
+  return {
+    graphql: vi.fn(),
+    resolveIssueId: vi.fn(),
+    resolveTeamId: vi.fn(),
+    resolveStateId: vi.fn(),
+    resolveUserId: vi.fn(),
+    resolveLabelIds: vi.fn(),
+    resolveProjectId: vi.fn(),
+    _resetIssueIdCache: vi.fn(),
+  } as unknown as LinearClient;
+}
 
 function parse(result: { content: { type: string; text?: string }[] }) {
   const text = result.content.find((c) => c.type === "text")?.text;
   return text ? JSON.parse(text) : undefined;
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 describe("linear_team tool", () => {
+  let client: ReturnType<typeof mockClient>;
+
+  beforeEach(() => {
+    client = mockClient();
+  });
+
   it("has correct name", () => {
-    const tool = createTeamTool();
+    const tool = createTeamTool(client);
     expect(tool.name).toBe("linear_team");
   });
 
   describe("list", () => {
     it("returns all teams", async () => {
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.graphql).mockResolvedValue({
         teams: {
           nodes: [
             { id: "t1", name: "Engineering", key: "ENG" },
@@ -35,7 +43,7 @@ describe("linear_team tool", () => {
         },
       });
 
-      const tool = createTeamTool();
+      const tool = createTeamTool(client);
       const result = await tool.execute("call-1", { action: "list" });
       const data = parse(result);
       expect(data.teams).toHaveLength(2);
@@ -45,7 +53,7 @@ describe("linear_team tool", () => {
 
   describe("members", () => {
     it("returns members of a team", async () => {
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.graphql).mockResolvedValue({
         teams: {
           nodes: [
             {
@@ -60,7 +68,7 @@ describe("linear_team tool", () => {
         },
       });
 
-      const tool = createTeamTool();
+      const tool = createTeamTool(client);
       const result = await tool.execute("call-1", {
         action: "members",
         team: "ENG",
@@ -71,16 +79,16 @@ describe("linear_team tool", () => {
     });
 
     it("returns error without team", async () => {
-      const tool = createTeamTool();
+      const tool = createTeamTool(client);
       const result = await tool.execute("call-1", { action: "members" });
       const data = parse(result);
       expect(data.error).toContain("team is required");
     });
 
     it("returns error when team not found", async () => {
-      mockedGraphql.mockResolvedValue({ teams: { nodes: [] } });
+      vi.mocked(client.graphql).mockResolvedValue({ teams: { nodes: [] } });
 
-      const tool = createTeamTool();
+      const tool = createTeamTool(client);
       const result = await tool.execute("call-1", {
         action: "members",
         team: "NOPE",
@@ -91,9 +99,9 @@ describe("linear_team tool", () => {
   });
 
   it("catches and returns API errors", async () => {
-    mockedGraphql.mockRejectedValue(new Error("Network error"));
+    vi.mocked(client.graphql).mockRejectedValue(new Error("Network error"));
 
-    const tool = createTeamTool();
+    const tool = createTeamTool(client);
     const result = await tool.execute("call-1", { action: "list" });
     const data = parse(result);
     expect(data.error).toContain("Network error");

@@ -21,6 +21,8 @@ export interface QueueItem {
   priority: number;
   addedAt: string;
   status: "pending" | "in_progress";
+  /** Workspace ID for multi-workspace dedup isolation. */
+  workspaceId?: string;
 }
 
 export const QUEUE_EVENT: Record<string, string> = {
@@ -43,6 +45,8 @@ export interface EnqueueEntry {
   event: string;
   summary: string;
   issuePriority: number;
+  /** Workspace ID for multi-workspace dedup isolation. */
+  workspaceId?: string;
 }
 
 /** Map Linear priority (0=none) so no-priority sorts last. */
@@ -173,9 +177,9 @@ export class InboxQueue {
         writeJsonl(this.path, filtered);
       }
 
-      // Build dedup set from remaining items using id + mapped queue event
+      // Build dedup set from remaining items using workspaceId + id + mapped queue event
       const existingKeys = new Set(
-        filtered.map((item) => `${item.id}:${item.event}`),
+        filtered.map((item) => `${item.workspaceId ?? "default"}:${item.id}:${item.event}`),
       );
 
       const newItems: QueueItem[] = [];
@@ -185,10 +189,11 @@ export class InboxQueue {
         const queueEvent = QUEUE_EVENT[entry.event];
         if (!queueEvent) continue; // skip unmapped events
 
-        const dedupKey = `${entry.id}:${queueEvent}`;
+        const wsId = entry.workspaceId ?? "default";
+        const dedupKey = `${wsId}:${entry.id}:${queueEvent}`;
         if (existingKeys.has(dedupKey)) continue;
 
-        newItems.push({
+        const item: QueueItem = {
           id: entry.id,
           issueId: entry.issueId ?? entry.id,
           event: queueEvent,
@@ -196,7 +201,10 @@ export class InboxQueue {
           priority: queueEvent === "mention" ? 0 : mapPriority(entry.issuePriority),
           addedAt: now,
           status: "pending",
-        });
+        };
+        if (entry.workspaceId) item.workspaceId = entry.workspaceId;
+
+        newItems.push(item);
         existingKeys.add(dedupKey);
       }
 

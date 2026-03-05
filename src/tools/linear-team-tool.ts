@@ -1,7 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import { jsonResult, stringEnum, formatErrorMessage } from "openclaw/plugin-sdk";
-import { graphql } from "../linear-api.js";
+import type { LinearClient } from "../linear-client.js";
 
 const Params = Type.Object({
   action: stringEnum(
@@ -20,7 +20,7 @@ const Params = Type.Object({
 });
 type Params = Static<typeof Params>;
 
-export function createTeamTool(): AnyAgentTool {
+export function createTeamTool(client: LinearClient): AnyAgentTool {
   return {
     name: "linear_team",
     label: "Linear Team",
@@ -30,9 +30,9 @@ export function createTeamTool(): AnyAgentTool {
       try {
         switch (params.action) {
           case "list":
-            return await listTeams();
+            return await listTeams(client);
           case "members":
-            return await listMembers(params);
+            return await listMembers(client, params);
           default:
             return jsonResult({
               error: `Unknown action: ${(params as { action: string }).action}`,
@@ -47,8 +47,8 @@ export function createTeamTool(): AnyAgentTool {
   };
 }
 
-async function listTeams() {
-  const data = await graphql<{
+async function listTeams(client: LinearClient) {
+  const data = await client.graphql<{
     teams: {
       nodes: { id: string; name: string; key: string }[];
     };
@@ -57,12 +57,12 @@ async function listTeams() {
   return jsonResult({ teams: data.teams.nodes });
 }
 
-async function listMembers(params: Params) {
+async function listMembers(client: LinearClient, params: Params) {
   if (!params.team) {
     return jsonResult({ error: "team is required for members" });
   }
 
-  const data = await graphql<{
+  const data = await client.graphql<{
     teams: {
       nodes: {
         members: {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHmac } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createWebhookHandler } from "../src/webhook-handler.js";
+import { WorkspaceRegistry } from "../src/workspace-registry.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 const SECRET = "test-webhook-secret";
@@ -10,8 +11,8 @@ function makeLogger() {
   return { info: vi.fn(), error: vi.fn() };
 }
 
-function sign(body: string): string {
-  return createHmac("sha256", SECRET).update(body).digest("hex");
+function sign(body: string, secret = SECRET): string {
+  return createHmac("sha256", secret).update(body).digest("hex");
 }
 
 function makeReq(
@@ -179,6 +180,7 @@ describe("webhook-handler", () => {
         updatedFrom: { assigneeId: null, priority: 3 },
         data: expect.objectContaining({ assigneeId: "user-1" }),
       }),
+      undefined,
     );
   });
 
@@ -198,6 +200,7 @@ describe("webhook-handler", () => {
 
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ updatedFrom: undefined }),
+      undefined,
     );
   });
 
@@ -219,5 +222,97 @@ describe("webhook-handler", () => {
     await handler(req, res);
     expect(res.statusCode).toBe(413);
     expect(res.body).toBe("Payload Too Large");
+  });
+});
+
+describe("webhook-handler with registry", () => {
+  let logger: ReturnType<typeof makeLogger>;
+  let registry: WorkspaceRegistry;
+
+  beforeEach(() => {
+    logger = makeLogger();
+    registry = new WorkspaceRegistry();
+  });
+
+  it("matches workspace A by signature", async () => {
+    registry.register(
+      { id: "ws-A", apiKey: "key-A", webhookSecret: "secret-A", agentMapping: {} },
+      logger,
+    );
+    registry.register(
+      { id: "ws-B", apiKey: "key-B", webhookSecret: "secret-B", agentMapping: {} },
+      logger,
+    );
+
+    const onEvent = vi.fn();
+    const handler = createWebhookHandler({ registry, logger, onEvent });
+
+    const body = JSON.stringify({
+      action: "create",
+      type: "Issue",
+      data: { id: "i1" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const req = makeReq(body, { "Linear-Signature": sign(body, "secret-A") });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "Issue" }),
+      expect.objectContaining({ config: expect.objectContaining({ id: "ws-A" }) }),
+    );
+  });
+
+  it("matches workspace B by signature", async () => {
+    registry.register(
+      { id: "ws-A", apiKey: "key-A", webhookSecret: "secret-A", agentMapping: {} },
+      logger,
+    );
+    registry.register(
+      { id: "ws-B", apiKey: "key-B", webhookSecret: "secret-B", agentMapping: {} },
+      logger,
+    );
+
+    const onEvent = vi.fn();
+    const handler = createWebhookHandler({ registry, logger, onEvent });
+
+    const body = JSON.stringify({
+      action: "update",
+      type: "Comment",
+      data: { id: "c1" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const req = makeReq(body, { "Linear-Signature": sign(body, "secret-B") });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ config: expect.objectContaining({ id: "ws-B" }) }),
+    );
+  });
+
+  it("returns 400 when signature matches no workspace", async () => {
+    registry.register(
+      { id: "ws-A", apiKey: "key-A", webhookSecret: "secret-A", agentMapping: {} },
+      logger,
+    );
+
+    const handler = createWebhookHandler({ registry, logger });
+
+    const body = JSON.stringify({
+      action: "create",
+      type: "Issue",
+      data: { id: "i1" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const req = makeReq(body, { "Linear-Signature": sign(body, "wrong-secret") });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toBe("Invalid signature");
   });
 });

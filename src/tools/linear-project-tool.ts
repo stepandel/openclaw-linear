@@ -1,7 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import { jsonResult, stringEnum, formatErrorMessage } from "openclaw/plugin-sdk";
-import { graphql, resolveTeamId } from "../linear-api.js";
+import type { LinearClient } from "../linear-client.js";
 
 const Params = Type.Object({
   action: stringEnum(
@@ -42,7 +42,7 @@ const Params = Type.Object({
 });
 type Params = Static<typeof Params>;
 
-export function createProjectTool(): AnyAgentTool {
+export function createProjectTool(client: LinearClient): AnyAgentTool {
   return {
     name: "linear_project",
     label: "Linear Project",
@@ -53,11 +53,11 @@ export function createProjectTool(): AnyAgentTool {
       try {
         switch (params.action) {
           case "list":
-            return await listProjects(params);
+            return await listProjects(client, params);
           case "view":
-            return await viewProject(params);
+            return await viewProject(client, params);
           case "create":
-            return await createProject(params);
+            return await createProject(client, params);
           default:
             return jsonResult({
               error: `Unknown action: ${(params as { action: string }).action}`,
@@ -72,7 +72,7 @@ export function createProjectTool(): AnyAgentTool {
   };
 }
 
-async function listProjects(params: Params) {
+async function listProjects(client: LinearClient, params: Params) {
   const filterParts: string[] = [];
   const variables: Record<string, unknown> = {};
   const varDecls: string[] = [];
@@ -97,7 +97,7 @@ async function listProjects(params: Params) {
     : "";
   const varStr = varDecls.length ? `(${varDecls.join(", ")})` : "";
 
-  const data = await graphql<{
+  const data = await client.graphql<{
     projects: {
       nodes: {
         id: string;
@@ -123,12 +123,12 @@ async function listProjects(params: Params) {
   return jsonResult({ projects: data.projects.nodes });
 }
 
-async function viewProject(params: Params) {
+async function viewProject(client: LinearClient, params: Params) {
   if (!params.projectId) {
     return jsonResult({ error: "projectId is required for view" });
   }
 
-  const data = await graphql<{
+  const data = await client.graphql<{
     project: Record<string, unknown>;
   }>(
     `query($id: String!) {
@@ -150,7 +150,7 @@ async function viewProject(params: Params) {
   return jsonResult(data.project);
 }
 
-async function createProject(params: Params) {
+async function createProject(client: LinearClient, params: Params) {
   if (!params.name) {
     return jsonResult({ error: "name is required for create" });
   }
@@ -159,11 +159,11 @@ async function createProject(params: Params) {
 
   if (params.description) input.description = params.description;
   if (params.team) {
-    const teamId = await resolveTeamId(params.team);
+    const teamId = await client.resolveTeamId(params.team);
     input.teamIds = [teamId];
   }
 
-  const data = await graphql<{
+  const data = await client.graphql<{
     projectCreate: {
       success: boolean;
       project: { id: string; name: string; url: string };

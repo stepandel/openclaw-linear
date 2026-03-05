@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { formatErrorMessage } from "openclaw/plugin-sdk";
+import type { WorkspaceRegistry, Workspace } from "./workspace-registry.js";
 
 export type LinearWebhookPayload = {
   action: string;
@@ -10,14 +11,29 @@ export type LinearWebhookPayload = {
   createdAt: string;
 };
 
-type WebhookHandlerDeps = {
+/** Single-secret mode (backward compatible). */
+type SingleSecretDeps = {
   webhookSecret: string;
+  registry?: undefined;
   logger: {
     info: (message: string) => void;
     error: (message: string) => void;
   };
-  onEvent?: (event: LinearWebhookPayload) => void;
+  onEvent?: (event: LinearWebhookPayload, workspace?: Workspace) => void;
 };
+
+/** Multi-workspace mode. */
+type RegistryDeps = {
+  webhookSecret?: undefined;
+  registry: WorkspaceRegistry;
+  logger: {
+    info: (message: string) => void;
+    error: (message: string) => void;
+  };
+  onEvent?: (event: LinearWebhookPayload, workspace?: Workspace) => void;
+};
+
+type WebhookHandlerDeps = SingleSecretDeps | RegistryDeps;
 
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
 const DEDUP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -93,10 +109,29 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
     }
 
     const signature = req.headers["linear-signature"];
-    if (typeof signature !== "string" || !verifySignature(rawBody, signature, deps.webhookSecret)) {
+    if (typeof signature !== "string") {
       res.writeHead(400);
       res.end("Invalid signature");
       return;
+    }
+
+    // Verify signature: registry mode tries all workspaces, single-secret mode uses one secret
+    let matchedWorkspace: Workspace | undefined;
+
+    if (deps.registry) {
+      const ws = deps.registry.matchBySignature(rawBody, signature);
+      if (!ws) {
+        res.writeHead(400);
+        res.end("Invalid signature");
+        return;
+      }
+      matchedWorkspace = ws;
+    } else {
+      if (!verifySignature(rawBody, signature, deps.webhookSecret)) {
+        res.writeHead(400);
+        res.end("Invalid signature");
+        return;
+      }
     }
 
     let event: LinearWebhookPayload;
@@ -139,7 +174,7 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
     res.end("OK");
 
     try {
-      deps.onEvent?.(event);
+      deps.onEvent?.(event, matchedWorkspace);
     } catch (err) {
       deps.logger.error(`Event handler error: ${formatErrorMessage(err)}`);
     }

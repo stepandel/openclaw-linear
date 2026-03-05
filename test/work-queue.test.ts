@@ -28,8 +28,11 @@ function entry(
   event: string,
   summary: string,
   issuePriority = 0,
+  workspaceId?: string,
 ): EnqueueEntry {
-  return { id, event, summary, issuePriority };
+  const e: EnqueueEntry = { id, event, summary, issuePriority };
+  if (workspaceId) e.workspaceId = workspaceId;
+  return e;
 }
 
 beforeEach(() => {
@@ -586,5 +589,60 @@ describe("InboxQueue mutex serialization", () => {
     const onDisk = readItems();
     expect(onDisk).toHaveLength(2);
     expect(onDisk.every((i) => i.status === "in_progress")).toBe(true);
+  });
+});
+
+// --- Cross-workspace dedup isolation ---
+
+describe("InboxQueue cross-workspace dedup", () => {
+  it("allows same issue ID from different workspaces", async () => {
+    const queue = new InboxQueue(QUEUE_PATH);
+    const added1 = await queue.enqueue([
+      entry("ENG-42", "issue.assigned", "Fix bug (ws-A)", 2, "ws-A"),
+    ]);
+    const added2 = await queue.enqueue([
+      entry("ENG-42", "issue.assigned", "Fix bug (ws-B)", 2, "ws-B"),
+    ]);
+
+    expect(added1).toBe(1);
+    expect(added2).toBe(1);
+
+    const items = readItems();
+    expect(items).toHaveLength(2);
+    expect(items[0].workspaceId).toBe("ws-A");
+    expect(items[1].workspaceId).toBe("ws-B");
+  });
+
+  it("deduplicates same issue ID within same workspace", async () => {
+    const queue = new InboxQueue(QUEUE_PATH);
+    await queue.enqueue([
+      entry("ENG-42", "issue.assigned", "Fix bug", 2, "ws-A"),
+    ]);
+    const added = await queue.enqueue([
+      entry("ENG-42", "issue.assigned", "Fix bug", 2, "ws-A"),
+    ]);
+
+    expect(added).toBe(0);
+    expect(readItems()).toHaveLength(1);
+  });
+
+  it("items without workspaceId use 'default' for dedup", async () => {
+    const queue = new InboxQueue(QUEUE_PATH);
+    await queue.enqueue([entry("ENG-42", "issue.assigned", "Fix bug", 2)]);
+    const added = await queue.enqueue([entry("ENG-42", "issue.assigned", "Fix bug", 2)]);
+
+    expect(added).toBe(0);
+    expect(readItems()).toHaveLength(1);
+  });
+
+  it("workspace items don't collide with default items", async () => {
+    const queue = new InboxQueue(QUEUE_PATH);
+    await queue.enqueue([entry("ENG-42", "issue.assigned", "Fix bug", 2)]);
+    const added = await queue.enqueue([
+      entry("ENG-42", "issue.assigned", "Fix bug (ws-A)", 2, "ws-A"),
+    ]);
+
+    expect(added).toBe(1);
+    expect(readItems()).toHaveLength(2);
   });
 });

@@ -1,61 +1,49 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { LinearClient } from "../../src/linear-client.js";
+import { createIssueTool } from "../../src/tools/linear-issue-tool.js";
 
-vi.mock("../../src/linear-api.js", () => ({
-  graphql: vi.fn(),
-  resolveIssueId: vi.fn(),
-  resolveTeamId: vi.fn(),
-  resolveStateId: vi.fn(),
-  resolveUserId: vi.fn(),
-  resolveLabelIds: vi.fn(),
-  resolveProjectId: vi.fn(),
-}));
-
-const {
-  graphql,
-  resolveIssueId,
-  resolveTeamId,
-  resolveStateId,
-  resolveUserId,
-  resolveLabelIds,
-  resolveProjectId,
-} = await import("../../src/linear-api.js");
-const { createIssueTool } = await import("../../src/tools/linear-issue-tool.js");
-
-const mockedGraphql = vi.mocked(graphql);
-const mockedResolveIssueId = vi.mocked(resolveIssueId);
-const mockedResolveTeamId = vi.mocked(resolveTeamId);
-const mockedResolveStateId = vi.mocked(resolveStateId);
-const mockedResolveUserId = vi.mocked(resolveUserId);
-const mockedResolveLabelIds = vi.mocked(resolveLabelIds);
-const mockedResolveProjectId = vi.mocked(resolveProjectId);
+function mockClient(): LinearClient {
+  return {
+    graphql: vi.fn(),
+    resolveIssueId: vi.fn(),
+    resolveTeamId: vi.fn(),
+    resolveStateId: vi.fn(),
+    resolveUserId: vi.fn(),
+    resolveLabelIds: vi.fn(),
+    resolveProjectId: vi.fn(),
+    _resetIssueIdCache: vi.fn(),
+  } as unknown as LinearClient;
+}
 
 function parse(result: { content: { type: string; text?: string }[] }) {
   const text = result.content.find((c) => c.type === "text")?.text;
   return text ? JSON.parse(text) : undefined;
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 describe("linear_issue tool", () => {
+  let client: ReturnType<typeof mockClient>;
+
+  beforeEach(() => {
+    client = mockClient();
+  });
+
   it("has correct name", () => {
-    const tool = createIssueTool();
+    const tool = createIssueTool(client);
     expect(tool.name).toBe("linear_issue");
   });
 
   describe("view", () => {
     it("returns issue details", async () => {
-      mockedResolveIssueId.mockResolvedValue("uuid-1");
+      vi.mocked(client.resolveIssueId).mockResolvedValue("uuid-1");
       const issue = {
         id: "uuid-1",
         identifier: "ENG-42",
         title: "Fix bug",
         state: { name: "Todo" },
       };
-      mockedGraphql.mockResolvedValue({ issue });
+      vi.mocked(client.graphql).mockResolvedValue({ issue });
 
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", {
         action: "view",
         issueId: "ENG-42",
@@ -66,7 +54,7 @@ describe("linear_issue tool", () => {
     });
 
     it("returns error without issueId", async () => {
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", { action: "view" });
       const data = parse(result);
       expect(data.error).toContain("issueId is required");
@@ -75,7 +63,7 @@ describe("linear_issue tool", () => {
 
   describe("list", () => {
     it("returns filtered issues", async () => {
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.graphql).mockResolvedValue({
         issues: {
           nodes: [
             { id: "i1", identifier: "ENG-1", title: "Task 1" },
@@ -84,7 +72,7 @@ describe("linear_issue tool", () => {
         },
       });
 
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", {
         action: "list",
         state: "In Progress",
@@ -95,11 +83,11 @@ describe("linear_issue tool", () => {
     });
 
     it("lists without filters", async () => {
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.graphql).mockResolvedValue({
         issues: { nodes: [] },
       });
 
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", { action: "list" });
       const data = parse(result);
       expect(data.issues).toEqual([]);
@@ -108,13 +96,13 @@ describe("linear_issue tool", () => {
 
   describe("create", () => {
     it("creates an issue with all fields", async () => {
-      mockedResolveTeamId.mockResolvedValue("team-1");
-      mockedResolveStateId.mockResolvedValue("state-1");
-      mockedResolveUserId.mockResolvedValue("user-1");
-      mockedResolveProjectId.mockResolvedValue("proj-1");
-      mockedResolveIssueId.mockResolvedValue("parent-uuid");
-      mockedResolveLabelIds.mockResolvedValue(["label-1"]);
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.resolveTeamId).mockResolvedValue("team-1");
+      vi.mocked(client.resolveStateId).mockResolvedValue("state-1");
+      vi.mocked(client.resolveUserId).mockResolvedValue("user-1");
+      vi.mocked(client.resolveProjectId).mockResolvedValue("proj-1");
+      vi.mocked(client.resolveIssueId).mockResolvedValue("parent-uuid");
+      vi.mocked(client.resolveLabelIds).mockResolvedValue(["label-1"]);
+      vi.mocked(client.graphql).mockResolvedValue({
         issueCreate: {
           success: true,
           issue: {
@@ -126,7 +114,7 @@ describe("linear_issue tool", () => {
         },
       });
 
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", {
         action: "create",
         title: "New issue",
@@ -145,14 +133,14 @@ describe("linear_issue tool", () => {
     });
 
     it("returns error without title", async () => {
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", { action: "create" });
       const data = parse(result);
       expect(data.error).toContain("title is required");
     });
 
     it("fetches default team when none specified", async () => {
-      mockedGraphql
+      vi.mocked(client.graphql)
         .mockResolvedValueOnce({ teams: { nodes: [{ id: "default-team" }] } })
         .mockResolvedValueOnce({
           issueCreate: {
@@ -161,7 +149,7 @@ describe("linear_issue tool", () => {
           },
         });
 
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", {
         action: "create",
         title: "Minimal",
@@ -173,8 +161,8 @@ describe("linear_issue tool", () => {
 
   describe("update", () => {
     it("updates issue fields", async () => {
-      mockedResolveIssueId.mockResolvedValue("uuid-1");
-      mockedGraphql
+      vi.mocked(client.resolveIssueId).mockResolvedValue("uuid-1");
+      vi.mocked(client.graphql)
         .mockResolvedValueOnce({ issue: { team: { id: "team-1" } } })
         .mockResolvedValueOnce({
           issueUpdate: {
@@ -182,9 +170,9 @@ describe("linear_issue tool", () => {
             issue: { id: "uuid-1", identifier: "ENG-42", title: "Updated" },
           },
         });
-      mockedResolveStateId.mockResolvedValue("state-done");
+      vi.mocked(client.resolveStateId).mockResolvedValue("state-done");
 
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", {
         action: "update",
         issueId: "ENG-42",
@@ -196,7 +184,7 @@ describe("linear_issue tool", () => {
     });
 
     it("returns error without issueId", async () => {
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", {
         action: "update",
         title: "No ID",
@@ -208,12 +196,12 @@ describe("linear_issue tool", () => {
 
   describe("delete", () => {
     it("deletes an issue", async () => {
-      mockedResolveIssueId.mockResolvedValue("uuid-1");
-      mockedGraphql.mockResolvedValue({
+      vi.mocked(client.resolveIssueId).mockResolvedValue("uuid-1");
+      vi.mocked(client.graphql).mockResolvedValue({
         issueDelete: { success: true },
       });
 
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", {
         action: "delete",
         issueId: "ENG-42",
@@ -223,7 +211,7 @@ describe("linear_issue tool", () => {
     });
 
     it("returns error without issueId", async () => {
-      const tool = createIssueTool();
+      const tool = createIssueTool(client);
       const result = await tool.execute("call-1", { action: "delete" });
       const data = parse(result);
       expect(data.error).toContain("issueId is required");
@@ -231,9 +219,9 @@ describe("linear_issue tool", () => {
   });
 
   it("catches and returns errors from the API", async () => {
-    mockedResolveIssueId.mockRejectedValue(new Error("Network failure"));
+    vi.mocked(client.resolveIssueId).mockRejectedValue(new Error("Network failure"));
 
-    const tool = createIssueTool();
+    const tool = createIssueTool(client);
     const result = await tool.execute("call-1", {
       action: "view",
       issueId: "ENG-1",

@@ -5,6 +5,9 @@ import { createEventRouter, type RouterAction } from "./event-router.js";
 import { InboxQueue, type EnqueueEntry } from "./work-queue.js";
 import { createQueueTool } from "./tools/queue-tool.js";
 import { setApiKey } from "./linear-api.js";
+import { LinearClient } from "./linear-client.js";
+import { WorkspaceRegistry, type WorkspaceConfig, type Workspace } from "./workspace-registry.js";
+import type { OpenClawPluginToolContext } from "./types.js";
 import { createIssueTool } from "./tools/linear-issue-tool.js";
 import { createCommentTool } from "./tools/linear-comment-tool.js";
 import { createTeamTool } from "./tools/linear-team-tool.js";
@@ -55,6 +58,7 @@ async function dispatchConsolidatedActions(
   actions: RouterAction[],
   api: OpenClawPluginApi,
   queue: InboxQueue,
+  sessionWorkspaceMap: Map<string, string>,
 ): Promise<void> {
   if (actions.length === 0) return;
 
@@ -80,6 +84,7 @@ async function dispatchConsolidatedActions(
     event: a.event,
     summary: a.issueLabel,
     issuePriority: a.issuePriority,
+    workspaceId: a.workspaceId,
   }));
   const added = await queue.enqueue(entries);
 
@@ -109,6 +114,11 @@ async function dispatchConsolidatedActions(
     OriginatingTo: `${CHANNEL_ID}:${first.linearUserId}`,
   });
 
+  // Track session → workspace mapping for tool resolution
+  if (first.workspaceId && route.sessionKey) {
+    sessionWorkspaceMap.set(route.sessionKey, first.workspaceId);
+  }
+
   await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
     ctx,
     cfg,
@@ -125,35 +135,105 @@ async function dispatchConsolidatedActions(
   });
 }
 
+function resolveWorkspace(
+  ctx: OpenClawPluginToolContext,
+  sessionWorkspaceMap: Map<string, string>,
+  registry: WorkspaceRegistry,
+): Workspace | undefined {
+  // 1. Try sessionKey lookup
+  if (ctx.sessionKey) {
+    const wsId = sessionWorkspaceMap.get(ctx.sessionKey);
+    if (wsId) {
+      const ws = registry.get(wsId);
+      if (ws) return ws;
+    }
+  }
+
+  // 2. Fallback: agentId → workspace via registry
+  if (ctx.agentId) {
+    const ws = registry.resolveByAgentId(ctx.agentId);
+    if (ws) return ws;
+  }
+
+  // 3. Final fallback: default workspace (single workspace)
+  return registry.getDefault();
+}
+
 let activeDebouncer: { flushKey: (key: string) => Promise<void> } | undefined;
 const activeDebouncerKeys = new Set<string>();
 
 export function activate(api: OpenClawPluginApi): void {
   api.logger.info("Linear plugin activated");
 
-  const linearApiKey = api.pluginConfig?.["apiKey"];
-  if (typeof linearApiKey !== "string" || !linearApiKey) {
-    api.logger.error("[linear] apiKey is not configured — plugin is inert");
-    return;
-  }
-  setApiKey(linearApiKey);
+  const registry = new WorkspaceRegistry();
+  const sessionWorkspaceMap = new Map<string, string>();
 
-  const webhookSecret = api.pluginConfig?.["webhookSecret"];
-  if (typeof webhookSecret !== "string" || !webhookSecret) {
-    api.logger.error("[linear] webhookSecret is not configured — plugin is inert");
-    return;
+  // --- Parse config: multi-workspace or single-workspace ---
+  const workspacesConfig = api.pluginConfig?.["workspaces"] as WorkspaceConfig[] | undefined;
+
+  if (workspacesConfig && Array.isArray(workspacesConfig) && workspacesConfig.length > 0) {
+    // Multi-workspace mode
+    for (const ws of workspacesConfig) {
+      if (!ws.id || !ws.apiKey || !ws.webhookSecret) {
+        api.logger.error(`[linear] Workspace missing required fields (id, apiKey, webhookSecret) — skipping`);
+        continue;
+      }
+      registry.register(ws, api.logger);
+      api.logger.info(`[linear] Registered workspace "${ws.id}"`);
+    }
+
+    if (registry.size === 0) {
+      api.logger.error("[linear] No valid workspaces configured — plugin is inert");
+      return;
+    }
+
+    // Set default client for the shim (backward compat with any code using linear-api.ts directly)
+    const defaultWs = registry.getDefault();
+    if (defaultWs) {
+      setApiKey(defaultWs.config.apiKey);
+    }
+  } else {
+    // Single-workspace mode (backward compatible)
+    const linearApiKey = api.pluginConfig?.["apiKey"];
+    if (typeof linearApiKey !== "string" || !linearApiKey) {
+      api.logger.error("[linear] apiKey is not configured — plugin is inert");
+      return;
+    }
+    setApiKey(linearApiKey);
+
+    const webhookSecret = api.pluginConfig?.["webhookSecret"];
+    if (typeof webhookSecret !== "string" || !webhookSecret) {
+      api.logger.error("[linear] webhookSecret is not configured — plugin is inert");
+      return;
+    }
+
+    const agentMapping =
+      (api.pluginConfig?.["agentMapping"] as Record<string, string>) ?? {};
+    const eventFilter =
+      (api.pluginConfig?.["eventFilter"] as string[]) ?? [];
+    const teamIds =
+      (api.pluginConfig?.["teamIds"] as string[]) ?? [];
+    const stateActions =
+      (api.pluginConfig?.["stateActions"] as Record<string, string>) ?? undefined;
+
+    registry.register(
+      {
+        id: "default",
+        apiKey: linearApiKey,
+        webhookSecret,
+        agentMapping,
+        teamIds: teamIds.length ? teamIds : undefined,
+        eventFilter: eventFilter.length ? eventFilter : undefined,
+        stateActions,
+      },
+      api.logger,
+    );
+
+    if (Object.keys(agentMapping).length === 0) {
+      api.logger.info("[linear] agentMapping is empty — all events will be dropped");
+    }
   }
 
-  const agentMapping =
-    (api.pluginConfig?.["agentMapping"] as Record<string, string>) ?? {};
-  if (Object.keys(agentMapping).length === 0) {
-    api.logger.info("[linear] agentMapping is empty — all events will be dropped");
-  }
-
-  const eventFilter =
-    (api.pluginConfig?.["eventFilter"] as string[]) ?? [];
-  const teamIds =
-    (api.pluginConfig?.["teamIds"] as string[]) ?? [];
   const rawDebounceMs = api.pluginConfig?.["debounceMs"] as number | undefined;
   const debounceMs =
     (typeof rawDebounceMs === "number" && rawDebounceMs > 0)
@@ -177,12 +257,24 @@ export function activate(api: OpenClawPluginApi): void {
     );
   });
 
+  // Register queue tool (not workspace-scoped)
   api.registerTool(createQueueTool(queue));
-  api.registerTool(createIssueTool());
-  api.registerTool(createCommentTool());
-  api.registerTool(createTeamTool());
-  api.registerTool(createProjectTool());
-  api.registerTool(createRelationTool());
+
+  // Register workspace-scoped tools via tool factory
+  api.registerTool(
+    (ctx: OpenClawPluginToolContext) => {
+      const ws = resolveWorkspace(ctx, sessionWorkspaceMap, registry);
+      if (!ws) return null;
+      return [
+        createIssueTool(ws.client),
+        createCommentTool(ws.client),
+        createTeamTool(ws.client),
+        createProjectTool(ws.client),
+        createRelationTool(ws.client),
+      ];
+    },
+    { names: ["linear_issue", "linear_comment", "linear_team", "linear_project", "linear_relation"] },
+  );
 
   // Auto-wake: after a "complete" action, dispatch a fresh session if items remain
   api.on("after_tool_call", async (event) => {
@@ -240,23 +332,12 @@ export function activate(api: OpenClawPluginApi): void {
     });
   });
 
-  const stateActions =
-    (api.pluginConfig?.["stateActions"] as Record<string, string>) ?? undefined;
-
-  const routeEvent = createEventRouter({
-    agentMapping,
-    logger: api.logger,
-    eventFilter: eventFilter.length ? eventFilter : undefined,
-    teamIds: teamIds.length ? teamIds : undefined,
-    stateActions,
-  });
-
   const debouncer = api.runtime.channel.debounce.createInboundDebouncer<RouterAction>({
     debounceMs,
     buildKey: (action) => action.agentId,
     shouldDebounce: () => true,
     onFlush: async (actions) => {
-      await dispatchConsolidatedActions(actions, api, queue);
+      await dispatchConsolidatedActions(actions, api, queue, sessionWorkspaceMap);
     },
     onError: (err) => {
       api.logger.error(
@@ -267,13 +348,23 @@ export function activate(api: OpenClawPluginApi): void {
   activeDebouncer = debouncer;
 
   const handler = createWebhookHandler({
-    webhookSecret,
+    registry,
     logger: api.logger,
-    onEvent: (event) => {
-      const actions = routeEvent(event);
+    onEvent: (event, workspace) => {
+      // Use workspace-specific router if available, otherwise fall back to first workspace
+      const ws = workspace ?? registry.getDefault();
+      if (!ws) {
+        api.logger.error("[linear] No workspace matched for event — dropping");
+        return;
+      }
+
+      const actions = ws.routeEvent(event);
       for (const action of actions) {
+        // Tag action with workspace ID
+        action.workspaceId = ws.config.id;
+
         api.logger.info(
-          `[event-router] ${action.type} agent=${action.agentId} event=${action.event}: ${action.detail}`,
+          `[event-router] ${action.type} agent=${action.agentId} event=${action.event} workspace=${ws.config.id}: ${action.detail}`,
         );
 
         if (action.type === "wake") {
@@ -290,6 +381,7 @@ export function activate(api: OpenClawPluginApi): void {
                 event: action.event,
                 summary: action.issueLabel,
                 issuePriority: action.issuePriority,
+                workspaceId: action.workspaceId,
               },
             ])
             .catch((err) =>
@@ -308,7 +400,7 @@ export function activate(api: OpenClawPluginApi): void {
   });
 
   api.logger.info(
-    `Linear webhook handler registered at /hooks/linear (debounce: ${debounceMs}ms)`,
+    `Linear webhook handler registered at /hooks/linear (debounce: ${debounceMs}ms, workspaces: ${registry.size})`,
   );
 }
 
