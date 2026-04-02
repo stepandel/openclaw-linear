@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { AnyAgentTool } from "openclaw/plugin-sdk";
-import { jsonResult, stringEnum, formatErrorMessage } from "openclaw/plugin-sdk";
+import { jsonResult, stringEnum } from "openclaw/plugin-sdk/agent-runtime";
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { graphql, resolveTeamId } from "../linear-api.js";
 
 const Params = Type.Object({

@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { AnyAgentTool } from "openclaw/plugin-sdk";
-import { jsonResult, stringEnum, optionalStringEnum, formatErrorMessage } from "openclaw/plugin-sdk";
+import { jsonResult, stringEnum, optionalStringEnum } from "openclaw/plugin-sdk/agent-runtime";
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { graphql, resolveIssueId } from "../linear-api.js";
 
 const RELATION_TYPE_MAP: Record<string, string> = {

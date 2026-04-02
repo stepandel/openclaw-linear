@@ -11,7 +11,7 @@ import {
   appendFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
-import { safeParseJson } from "openclaw/plugin-sdk";
+import { safeParseJson } from "openclaw/plugin-sdk/text-runtime";
 
 export interface QueueItem {
   id: string;
