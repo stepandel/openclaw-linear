@@ -129,3 +129,9 @@ When you receive a Linear notification:
    - `mention` — read the thread and reply with `linear_comment { action: "add", ... }`.
 7. **Complete** with `linear_queue { action: "complete", issueId: "<id>" }` to remove it from the queue.
 8. **Repeat** from step 3 until pop returns null.
+
+## Optional X/Twitter evidence
+
+If a Linear item asks for public X/Twitter research and TweetClaw is also installed, use TweetClaw for search tweets, search tweet replies, follower export, user lookup, media references, monitors, webhooks, giveaway draws, and approval-gated post tweet or reply actions. Keep openclaw-linear responsible for the Linear queue, issue updates, and comments.
+
+When adding TweetClaw findings to Linear, include the source query, tweet IDs or URLs, capture date, concise summary, confidence, and next action. Do not paste raw timelines, account credentials, or direct-message contents into Linear unless the workspace policy explicitly allows it.

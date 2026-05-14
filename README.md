@@ -1,6 +1,6 @@
 # openclaw-linear
 
-Linear integration for [OpenClaw](https://github.com/nichochar/openclaw). Receives Linear webhook events, routes them through a persistent work queue, and gives agents tools to manage issues, comments, projects, teams, and relations via the Linear GraphQL API.
+Linear integration for [OpenClaw](https://github.com/openclaw/openclaw). Receives Linear webhook events, routes them through a persistent work queue, and gives agents tools to manage issues, comments, projects, teams, and relations via the Linear GraphQL API.
 
 ## Install
 
@@ -59,6 +59,22 @@ plugins:
    - Save
 
 3. **Verify:** Assign a Linear issue to a mapped user — the agent should receive a notification.
+
+## Optional X/Twitter Intake
+
+Use [TweetClaw](https://github.com/Xquik-dev/tweetclaw) beside openclaw-linear when Linear work needs public X/Twitter evidence or launch follow-up. Linear remains the issue queue and project system; TweetClaw handles X/Twitter automation through structured OpenClaw tools.
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+```
+
+Useful handoff pattern:
+
+1. Use TweetClaw to search tweets, search tweet replies, export followers, look up users, monitor tweets, collect media references, or run giveaway draws.
+2. Create or update the Linear issue with the source query, tweet IDs or URLs, capture date, concise summary, confidence, and next action.
+3. Use approval-gated TweetClaw actions only when the Linear work item explicitly calls for posting tweets or tweet replies.
+
+Links: [GitHub](https://github.com/Xquik-dev/tweetclaw), [npm](https://www.npmjs.com/package/@xquik/tweetclaw), [ClawHub](https://clawhub.ai/plugins/@xquik/tweetclaw).
 
 ## How It Works
 
