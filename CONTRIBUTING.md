@@ -24,11 +24,11 @@ Thanks for your interest in contributing to openclaw-linear!
 
 ## Reporting Bugs
 
-Use the [bug report template](https://github.com/nichochar/openclaw-linear/issues/new?template=bug_report.md) and include steps to reproduce.
+Use the [bug report template](https://github.com/stepandel/openclaw-linear/issues/new?template=bug_report.md) and include steps to reproduce.
 
 ## Suggesting Features
 
-Open an issue using the [feature request template](https://github.com/nichochar/openclaw-linear/issues/new?template=feature_request.md).
+Open an issue using the [feature request template](https://github.com/stepandel/openclaw-linear/issues/new?template=feature_request.md).
 
 ## Code of Conduct
 
