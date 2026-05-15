@@ -1,6 +1,6 @@
 # openclaw-linear
 
-Linear integration for [OpenClaw](https://github.com/nichochar/openclaw). Receives Linear webhook events, routes them through a persistent work queue, and gives agents tools to manage issues, comments, projects, teams, and relations via the Linear GraphQL API.
+Linear integration for [OpenClaw](https://github.com/openclaw/openclaw). Receives Linear webhook events, routes them through a persistent work queue, and gives agents tools to manage issues, comments, projects, teams, and relations via the Linear GraphQL API.
 
 ## Install
 
