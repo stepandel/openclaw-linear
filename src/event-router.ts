@@ -397,10 +397,6 @@ function handleComment(
   const bodyData = event.data.bodyData;
   const mentionedIds = extractMentionedUserIds(body, bodyData, config.agentMapping);
 
-  if (mentionedIds.length === 0) {
-    return [];
-  }
-
   const actions: RouterAction[] = [];
 
   const issueRef = event.data.issue as Record<string, unknown> | undefined;
@@ -430,6 +426,35 @@ function handleComment(
       config.logger.info(
         `Unmapped Linear user ${userId} mentioned in comment on ${issueId}`,
       );
+    }
+  }
+
+  // Handle replies: route to parent comment's author
+  const parentComment = event.data.parentComment as Record<string, unknown> | undefined;
+  if (parentComment) {
+    const parentUserId = parentComment.userId as string | undefined;
+    if (parentUserId) {
+      const agentId = config.agentMapping[parentUserId];
+      // Skip if parent author was already notified via mention
+      const alreadyNotified = mentionedIds.includes(parentUserId);
+      if (agentId && !alreadyNotified) {
+        actions.push({
+          type: "wake",
+          agentId,
+          event: "comment.reply",
+          detail: `Reply to comment on issue ${issueLabel}\n\n> ${body}`,
+          issueId,
+          issueLabel,
+          identifier,
+          issuePriority,
+          linearUserId: parentUserId,
+          commentId,
+        });
+      } else if (!agentId) {
+        config.logger.info(
+          `Unmapped Linear user ${parentUserId} is parent comment author on ${issueId}`,
+        );
+      }
     }
   }
 
