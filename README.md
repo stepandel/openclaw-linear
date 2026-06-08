@@ -17,6 +17,11 @@ plugins:
   linear:
     apiKey: "lin_api_..."                # Linear API key (required)
     webhookSecret: "your-signing-secret" # Webhook secret (required)
+    # Or resolve the webhook secret at runtime:
+    # webhookSecret:
+    #   source: "env"
+    #   provider: "process"
+    #   id: "LINEAR_WEBHOOK_SECRET"
     agentMapping:                        # Filter: only handle events for these Linear users
       "linear-user-uuid": "titus"
     teamIds: ["ENG", "OPS"]             # Optional: filter to specific teams (empty = all)
@@ -36,7 +41,7 @@ plugins:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `apiKey` | string | **Yes** | Linear API key. Create at [linear.app/settings/account/security](https://linear.app/settings/account/security). |
-| `webhookSecret` | string | **Yes** | Shared secret for HMAC webhook signature verification. |
+| `webhookSecret` | string or SecretRef | **Yes** | Shared secret for HMAC webhook signature verification. SecretRef values are resolved by OpenClaw runtime secret input handling before the webhook handler receives them. |
 | `agentMapping` | object | No | Maps Linear user UUIDs to agent IDs. Acts as a filter — events for unmapped users are ignored. Since each instance runs one agent, this typically has one entry. |
 | `teamIds` | string[] | No | Team keys to scope webhook processing. Empty = all teams. |
 | `eventFilter` | string[] | No | Event types to handle (`Issue`, `Comment`). Empty = all. |
@@ -54,7 +59,7 @@ plugins:
 2. **Register the webhook in Linear:**
    - Go to **Settings > API > Webhooks**
    - Set the URL to `https://your-host/hooks/linear`
-   - Set the secret to match your `webhookSecret`
+   - Set the secret to match the resolved value of your `webhookSecret`
    - Select event types: Issues, Comments
    - Save
 
