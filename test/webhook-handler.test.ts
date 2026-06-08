@@ -127,7 +127,18 @@ describe("openclaw-linear manifest contract", () => {
       expect.objectContaining({ type: "string", minLength: 1 }),
       expect.objectContaining({ $ref: "#/$defs/secretRef" }),
     ]));
-    expect(manifest.configSchema.$defs.secretRef.required).toEqual(["source", "provider", "id"]);
+    expect(manifest.configSchema.$defs.secretRef.required).toEqual(
+      expect.arrayContaining(["source", "provider", "id"]),
+    );
+    expect(manifest.configSchema.$defs.secretRef.required).toHaveLength(3);
+    expect(manifest.configSchema.$defs.secretRef.properties.provider).toMatchObject({
+      type: "string",
+      minLength: 1,
+    });
+    expect(manifest.configSchema.$defs.secretRef.properties.id).toMatchObject({
+      type: "string",
+      minLength: 1,
+    });
     expect(manifest.configContracts.secretInputs.paths).toContainEqual({
       path: "webhookSecret",
       expected: "string",
@@ -211,6 +222,15 @@ describe("webhook-handler", () => {
     expect(res.body).toBe("Invalid signature");
   });
 
+  it("rejects non-hex signatures without throwing", async () => {
+    const body = JSON.stringify({ action: "update", type: "Issue", data: {}, createdAt: "" });
+    const req = makeReq(body, { "Linear-Signature": "\u00e9".repeat(64) });
+    const res = makeRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toBe("Invalid signature");
+  });
+
   it("returns 400 when signature header is missing", async () => {
     const body = JSON.stringify({ action: "update", type: "Issue", data: {}, createdAt: "" });
     const req = makeReq(body, {});
@@ -275,11 +295,17 @@ describe("webhook-handler", () => {
       body: "{bad json",
       delivery: "delivery-malformed",
     });
+    const nonStringFields = await invoke(harnessHandler, {
+      body: issuePayload({ action: ["update"], type: ["Issue"] }),
+      delivery: "delivery-non-string-fields",
+    });
 
     expect(unsupported.statusCode).toBe(400);
     expect(unsupported.body).toBe("Unsupported event");
     expect(malformed.statusCode).toBe(400);
     expect(malformed.body).toBe("Malformed payload");
+    expect(nonStringFields.statusCode).toBe(400);
+    expect(nonStringFields.body).toBe("Unsupported event");
     expect(events).toHaveLength(0);
     expect(statuses).toEqual(expect.arrayContaining([
       expect.objectContaining({ reason: "unsupported_event", state: "refused" }),

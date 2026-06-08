@@ -52,8 +52,8 @@ function objectRecord(value: unknown): Record<string, unknown> {
 
 function validatePayloadShape(payload: unknown): { ok: boolean; action: string; type: string } {
   const record = objectRecord(payload);
-  const action = String(record.action ?? "");
-  const type = String(record.type ?? "");
+  const action = typeof record.action === "string" ? record.action : "";
+  const type = typeof record.type === "string" ? record.type : "";
   const allowedActions = ALLOWED_EVENT_ACTIONS[type];
   if (!allowedActions || !allowedActions.has(action)) {
     return { ok: false, action, type };
@@ -96,11 +96,15 @@ function recordStatus(
 }
 
 function verifySignature(body: string, signature: string, secret: string): boolean {
-  const expected = createHmac("sha256", secret).update(body).digest("hex");
-  if (expected.length !== signature.length) {
+  if (!/^[a-f0-9]{64}$/i.test(signature)) {
     return false;
   }
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  const expected = createHmac("sha256", secret).update(body).digest();
+  const provided = Buffer.from(signature, "hex");
+  if (expected.length !== provided.length) {
+    return false;
+  }
+  return timingSafeEqual(expected, provided);
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

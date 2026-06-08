@@ -22,6 +22,7 @@ plugins:
     #   source: "env"
     #   provider: "process"
     #   id: "LINEAR_WEBHOOK_SECRET"
+    # SecretRef requires an OpenClaw host that resolves secretInputs before activation.
     agentMapping:                        # Filter: only handle events for these Linear users
       "linear-user-uuid": "titus"
     teamIds: ["ENG", "OPS"]             # Optional: filter to specific teams (empty = all)
@@ -41,7 +42,7 @@ plugins:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `apiKey` | string | **Yes** | Linear API key. Create at [linear.app/settings/account/security](https://linear.app/settings/account/security). |
-| `webhookSecret` | string or SecretRef | **Yes** | Shared secret for HMAC webhook signature verification. SecretRef values are resolved by OpenClaw runtime secret input handling before the webhook handler receives them. |
+| `webhookSecret` | string or SecretRef | **Yes** | Shared secret for HMAC webhook signature verification. SecretRef values require OpenClaw runtime secret input handling and must be resolved to a non-empty string before plugin activation. Use a string value on hosts without SecretRef resolution. |
 | `agentMapping` | object | No | Maps Linear user UUIDs to agent IDs. Acts as a filter — events for unmapped users are ignored. Since each instance runs one agent, this typically has one entry. |
 | `teamIds` | string[] | No | Team keys to scope webhook processing. Empty = all teams. |
 | `eventFilter` | string[] | No | Event types to handle (`Issue`, `Comment`). Empty = all. |

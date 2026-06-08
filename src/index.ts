@@ -128,6 +128,16 @@ async function dispatchConsolidatedActions(
 let activeDebouncer: { flushKey: (key: string) => Promise<void> } | undefined;
 const activeDebouncerKeys = new Set<string>();
 
+function isSecretRefConfig(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.source === "string"
+    && typeof record.provider === "string"
+    && typeof record.id === "string";
+}
+
 export function activate(api: OpenClawPluginApi): void {
   api.logger.info("Linear plugin activated");
 
@@ -139,6 +149,10 @@ export function activate(api: OpenClawPluginApi): void {
   setApiKey(linearApiKey);
 
   const webhookSecret = api.pluginConfig?.["webhookSecret"];
+  if (isSecretRefConfig(webhookSecret)) {
+    api.logger.error("[linear] webhookSecret SecretRef was not resolved by the OpenClaw runtime — plugin is inert");
+    return;
+  }
   if (typeof webhookSecret !== "string" || !webhookSecret) {
     api.logger.error("[linear] webhookSecret is not configured — plugin is inert");
     return;
