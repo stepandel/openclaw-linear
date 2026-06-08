@@ -6,6 +6,33 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
+    "$defs": {
+      "secretRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "env",
+              "file",
+              "exec"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "provider",
+          "id"
+        ]
+      }
+    },
     "properties": {
       "apiKey": {
         "type": "string",
@@ -13,7 +40,15 @@
         "description": "Linear API key for authentication (create at linear.app/settings/account/security)"
       },
       "webhookSecret": {
-        "type": "string",
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "$ref": "#/$defs/secretRef"
+          }
+        ],
         "sensitive": true,
         "description": "Webhook signing secret for HMAC verification"
       },
@@ -43,5 +78,15 @@
       }
     },
     "required": ["webhookSecret", "apiKey"]
+  },
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "webhookSecret",
+          "expected": "string"
+        }
+      ]
+    }
   }
 }
